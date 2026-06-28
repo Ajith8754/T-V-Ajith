@@ -98,14 +98,14 @@ app.get('/api/health', (req, res) => {
 // -------------------------------------------------------
 // Serve Frontend Static Files (For Render Production)
 // -------------------------------------------------------
-const frontendDistPath = path.join(__dirname, '..', 'frontend', 'dist');
+const frontendDistPath = path.join(__dirname, 'public');
 app.use(express.static(frontendDistPath));
 
 app.get('*', (req, res) => {
   if (fs.existsSync(path.join(frontendDistPath, 'index.html'))) {
     res.sendFile(path.join(frontendDistPath, 'index.html'));
   } else {
-    res.status(404).send('Frontend not built yet. Run npm run build in frontend folder.');
+    res.status(404).send('Frontend not built yet. No public folder found.');
   }
 });
 
