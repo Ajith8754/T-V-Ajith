@@ -449,6 +449,9 @@ async function readFromGoogleSheet() {
   let allRecords = [];
 
   for (const tabName of allTabs) {
+    if (tabName === 'upload data') {
+      continue; // Skip the upload data tab to prevent it from re-polluting standard sync reports
+    }
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: sheetId,

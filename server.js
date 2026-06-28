@@ -183,6 +183,17 @@ async function startServer() {
     console.log('✅ Default user created: simple123');
   }
 
+  // Clean up any stale preview/upload data in database on startup
+  const { Op } = require('sequelize');
+  await TestReport.destroy({
+    where: {
+      [Op.or]: [
+        { source: 'google_sheets:upload data' },
+        { source: { [Op.like]: 'upload%' } }
+      ]
+    }
+  });
+
   // 3. Start Google Sheets sync on interval (disabled by default to prevent overwriting local uploads, use manual sync in navbar)
   const syncIntervalMs = parseInt(process.env.SYNC_INTERVAL_MS) || 60000;
 
