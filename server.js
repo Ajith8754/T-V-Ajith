@@ -86,6 +86,20 @@ app.get('/api/health', (req, res) => {
 });
 
 // -------------------------------------------------------
+// Serve Frontend Static Files (For Render Production)
+// -------------------------------------------------------
+const frontendDistPath = path.join(__dirname, '..', 'frontend', 'dist');
+app.use(express.static(frontendDistPath));
+
+app.get('*', (req, res) => {
+  if (fs.existsSync(path.join(frontendDistPath, 'index.html'))) {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  } else {
+    res.status(404).send('Frontend not built yet. Run npm run build in frontend folder.');
+  }
+});
+
+// -------------------------------------------------------
 // Google Sheets Sync Service
 // Runs every 60 seconds (configurable via SYNC_INTERVAL_MS)
 // -------------------------------------------------------
