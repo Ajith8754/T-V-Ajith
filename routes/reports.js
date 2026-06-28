@@ -737,24 +737,61 @@ router.delete('/clear-all', async (req, res) => {
   }
 });
 
+// Helper to remove upload sources from a comma-separated source string
+function removeUploadSources(sourceStr) {
+  if (!sourceStr) return '';
+  const uploadTabSource = 'google_sheets:upload data';
+  const sources = sourceStr.split(',').map(s => s.trim());
+  const cleanSources = sources.filter(s => {
+    const isUpload = s === 'upload' || 
+                     s === 'manual' || 
+                     s === 'google_drive' || 
+                     s === uploadTabSource ||
+                     s.startsWith('upload:') ||
+                     s.startsWith('url_import:') ||
+                     s.startsWith('google_sheets:upload data');
+    return !isUpload;
+  });
+  return cleanSources.join(',');
+}
+
 // -------------------------------------------------------
 // DELETE /api/reports/:id — Delete a record
 // Also removes the row from Google Sheets
 // -------------------------------------------------------
 router.delete('/:id', async (req, res) => {
   try {
-    // Fetch the record first so we have the report_number for Sheets deletion
-    const record = await TestReport.findOne({ where: { id: req.params.id }, raw: true });
+    const { preview } = req.query;
+
+    // Fetch the record first so we have the report_number and source
+    const record = await TestReport.findOne({ where: { id: req.params.id } });
     if (!record) return res.status(404).json({ error: 'Record not found' });
 
-    // Delete from SQLite
-    await TestReport.destroy({ where: { id: req.params.id } });
+    if (preview === 'true') {
+      // 1. Delete SPECIFICALLY from the 'upload data' tab in Google Sheets
+      if (record.report_number) {
+        deleteFromGoogleSheet(record.report_number, 'upload data').catch(err => {
+          console.warn("⚠️  Could not delete from Google Sheets 'upload data' tab:", err.message);
+        });
+      }
 
-    // Delete from Google Sheets (in background — don't fail if Sheets not configured)
-    if (record.report_number) {
-      deleteFromGoogleSheet(record.report_number).catch(err => {
-        console.warn('⚠️  Could not delete from Google Sheets:', err.message);
-      });
+      // 2. Remove upload-related sources in SQLite, or destroy if no other sources remain
+      const cleanedSource = removeUploadSources(record.source);
+      if (cleanedSource) {
+        await record.update({ source: cleanedSource });
+      } else {
+        await record.destroy();
+      }
+    } else {
+      // Default: Destroy SQLite record completely and delete from all Google Sheet tabs
+      const reportNumber = record.report_number;
+      await record.destroy();
+
+      if (reportNumber) {
+        deleteFromGoogleSheet(reportNumber).catch(err => {
+          console.warn('⚠️  Could not delete from Google Sheets:', err.message);
+        });
+      }
     }
 
     res.json({ success: true });

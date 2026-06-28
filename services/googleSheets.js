@@ -534,19 +534,30 @@ async function writeToGoogleSheet(rowData) {
 // Fix 1: called when user deletes a record from the website
 // Searches ALL sheets to find and delete the matching row
 // -------------------------------------------------------
-async function deleteFromGoogleSheet(reportNumber) {
+async function deleteFromGoogleSheet(reportNumber, targetSheetName = null) {
   if (!reportNumber) return;
 
   const auth = getAuthClient();
   const sheets = google.sheets({ version: 'v4', auth });
   const sheetId = process.env.GOOGLE_SHEET_ID;
 
-  // Get all tab names + their internal sheet IDs
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
-  const allTabs = meta.data.sheets.map(s => ({
-    title: s.properties.title,
-    sheetId: s.properties.sheetId,
-  }));
+  let allTabs = [];
+  if (targetSheetName) {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+    const found = meta.data.sheets.find(s => s.properties.title === targetSheetName);
+    if (found) {
+      allTabs = [{
+        title: found.properties.title,
+        sheetId: found.properties.sheetId
+      }];
+    }
+  } else {
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+    allTabs = meta.data.sheets.map(s => ({
+      title: s.properties.title,
+      sheetId: s.properties.sheetId,
+    }));
+  }
 
   let deletedAny = false;
   for (const tab of allTabs) {
