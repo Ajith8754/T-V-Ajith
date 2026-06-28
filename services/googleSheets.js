@@ -84,14 +84,27 @@ function excelDateToString(serial) {
 // Get authenticated Google Sheets client
 // -------------------------------------------------------
 function getAuthClient() {
-  const credentialsPath = path.resolve(process.env.GOOGLE_CREDENTIALS_PATH || './google-credentials.json');
-  if (!fs.existsSync(credentialsPath)) {
-    throw new Error(
-      `Google credentials file not found at: ${credentialsPath}\n` +
-      'Please follow SETUP_GUIDE.md to create your Google Service Account credentials.'
-    );
+  let credentials;
+
+  // Option 1: Parse from environment variable (ideal for production platforms like Render)
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+    } catch (e) {
+      throw new Error(`Failed to parse GOOGLE_CREDENTIALS_JSON environment variable: ${e.message}`);
+    }
+  } else {
+    // Option 2: Fallback to local credentials file path
+    const credentialsPath = path.resolve(process.env.GOOGLE_CREDENTIALS_PATH || './google-credentials.json');
+    if (!fs.existsSync(credentialsPath)) {
+      throw new Error(
+        `Google credentials file not found at: ${credentialsPath}\n` +
+        'Please follow SETUP_GUIDE.md to create your Google Service Account credentials.'
+      );
+    }
+    credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
   }
-  const credentials = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+
   return new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
