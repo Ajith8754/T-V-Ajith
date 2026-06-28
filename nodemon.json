@@ -1,0 +1,10 @@
+{
+  "ignore": [
+    "**/*.db",
+    "**/*.db-journal",
+    "**/*.db-wal",
+    "uploads/**",
+    "migrate.js",
+    "sheet_mappings.json"
+  ]
+}
