@@ -28,8 +28,13 @@ const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
-      // Allow any localhost port (5173, 5174, 5175, 3000, etc.)
-      if (!origin || origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+      // Allow localhost, the Render domain, or no origin
+      if (
+        !origin || 
+        origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ||
+        origin.includes('tvajithsimpleenergy.onrender.com') ||
+        origin.includes('onrender.com')
+      ) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -54,8 +59,13 @@ io.on('connection', (socket) => {
 // -------------------------------------------------------
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow any localhost port (5173, 5174, 5175, 3000, etc.)
-    if (!origin || origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+    // Allow localhost, the Render domain, or no origin (same-origin requests)
+    if (
+      !origin || 
+      origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ||
+      origin.includes('tvajithsimpleenergy.onrender.com') ||
+      origin.includes('onrender.com')
+    ) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
