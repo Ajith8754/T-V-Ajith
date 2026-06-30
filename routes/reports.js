@@ -303,7 +303,18 @@ function buildWhereClause(query) {
 
   // Filter by source (dynamic sheets)
   if (query.sheet) {
-    where.source = { [Op.like]: `%${query.sheet}%` };
+    if (query.sheet === 'google_sheets:upload data') {
+      const uploadTabSource = 'google_sheets:upload data';
+      where[Op.or] = [
+        { source: { [Op.like]: '%upload%' } },
+        { source: { [Op.like]: '%manual%' } },
+        { source: { [Op.like]: '%url_import%' } },
+        { source: { [Op.like]: '%google_drive%' } },
+        { source: { [Op.like]: `%${uploadTabSource}%` } }
+      ];
+    } else {
+      where.source = { [Op.like]: `%${query.sheet}%` };
+    }
   } else {
     const uploadTabSource = 'google_sheets:upload data';
     if (query.preview === 'true') {
@@ -428,7 +439,18 @@ router.get('/filter-options', async (req, res) => {
 
     const where = {};
     if (req.query.sheet) {
-      where.source = req.query.sheet;
+      if (req.query.sheet === 'google_sheets:upload data') {
+        const uploadTabSource = 'google_sheets:upload data';
+        where[Op.or] = [
+          { source: { [Op.like]: '%upload%' } },
+          { source: { [Op.like]: '%manual%' } },
+          { source: { [Op.like]: '%url_import%' } },
+          { source: { [Op.like]: '%google_drive%' } },
+          { source: { [Op.like]: `%${uploadTabSource}%` } }
+        ];
+      } else {
+        where.source = { [Op.like]: `%${req.query.sheet}%` };
+      }
     } else {
       where.source = {
         [Op.like]: 'google_sheets:%',
