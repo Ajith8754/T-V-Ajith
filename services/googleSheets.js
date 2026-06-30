@@ -792,6 +792,69 @@ async function writeMultipleToGoogleSheet(records) {
   }
 }
 
+// -------------------------------------------------------
+// CREATE SHEET TAB — adds a new tab to the Google Spreadsheet
+// Updates sheet_mappings.json so it appears in filter dropdowns
+// -------------------------------------------------------
+async function createSheetTab(tabName) {
+  if (!tabName || !tabName.trim()) {
+    throw new Error('Tab name is required');
+  }
+  const cleanName = tabName.trim();
+
+  const auth = getAuthClient();
+  const sheets = google.sheets({ version: 'v4', auth });
+  const sheetId = process.env.GOOGLE_SHEET_ID;
+
+  // Check if tab already exists
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
+  const existingTabs = meta.data.sheets.map(s => s.properties.title);
+  if (existingTabs.includes(cleanName)) {
+    throw new Error(`Sheet tab "${cleanName}" already exists`);
+  }
+
+  // Create the new sheet tab
+  const response = await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: {
+      requests: [
+        {
+          addSheet: {
+            properties: {
+              title: cleanName,
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  // Get the new sheet's ID from the response
+  const newSheetProps = response.data.replies[0]?.addSheet?.properties;
+  if (!newSheetProps) {
+    throw new Error('Failed to get new sheet properties from Google API response');
+  }
+  const newSheetId = String(newSheetProps.sheetId);
+
+  console.log(`✅ New Google Sheet tab created: "${cleanName}" (ID: ${newSheetId})`);
+
+  // Update sheet_mappings.json
+  const mappingPath = path.resolve(__dirname, '..', 'sheet_mappings.json');
+  let mappings = {};
+  if (fs.existsSync(mappingPath)) {
+    try {
+      mappings = JSON.parse(fs.readFileSync(mappingPath, 'utf8'));
+    } catch (e) {
+      console.error('Failed to parse sheet_mappings.json:', e);
+    }
+  }
+  mappings[newSheetId] = cleanName;
+  fs.writeFileSync(mappingPath, JSON.stringify(mappings, null, 2), 'utf8');
+  console.log(`📝 sheet_mappings.json updated with new tab: "${cleanName}"`);
+
+  return { sheetId: newSheetId, title: cleanName };
+}
+
 module.exports = {
   readFromGoogleSheet,
   writeToGoogleSheet,
@@ -801,5 +864,6 @@ module.exports = {
   excelDateToString,
   syncSheetMetadata,
   clearUploadDataInGoogleSheet,
+  createSheetTab,
 };
 

@@ -28,8 +28,13 @@ const httpServer = http.createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
-      // Allow any localhost port (5173, 5174, 5175, 3000, etc.)
-      if (!origin || origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+      // Allow localhost, the Render domain, or no origin
+      if (
+        !origin || 
+        origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ||
+        origin.includes('tvajithsimpleenergy.onrender.com') ||
+        origin.includes('onrender.com')
+      ) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));
@@ -54,8 +59,13 @@ io.on('connection', (socket) => {
 // -------------------------------------------------------
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow any localhost port (5173, 5174, 5175, 3000, etc.)
-    if (!origin || origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/)) {
+    // Allow localhost, the Render domain, or no origin (same-origin requests)
+    if (
+      !origin || 
+      origin.match(/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/) ||
+      origin.includes('tvajithsimpleenergy.onrender.com') ||
+      origin.includes('onrender.com')
+    ) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -83,6 +93,20 @@ app.use('/api/sync', syncRoutes);
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// -------------------------------------------------------
+// Serve Frontend Static Files (For Render Production)
+// -------------------------------------------------------
+const frontendDistPath = path.join(__dirname, 'public');
+app.use(express.static(frontendDistPath));
+
+app.get('*', (req, res) => {
+  if (fs.existsSync(path.join(frontendDistPath, 'index.html'))) {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  } else {
+    res.status(404).send('Frontend not built yet. No public folder found.');
+  }
 });
 
 // -------------------------------------------------------

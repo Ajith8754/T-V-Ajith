@@ -8,7 +8,7 @@ const router = express.Router();
 const { Op } = require('sequelize');
 const { TestReport, SyncLog } = require('../db');
 const { generatePDF } = require('../services/pdfGenerator');
-const { writeToGoogleSheet, deleteFromGoogleSheet, updateInGoogleSheet, writeMultipleToGoogleSheet, syncSheetMetadata, clearUploadDataInGoogleSheet } = require('../services/googleSheets');
+const { writeToGoogleSheet, deleteFromGoogleSheet, updateInGoogleSheet, writeMultipleToGoogleSheet, syncSheetMetadata, clearUploadDataInGoogleSheet, createSheetTab } = require('../services/googleSheets');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const path = require('path');
@@ -326,10 +326,12 @@ function buildWhereClause(query) {
         { source: { [Op.like]: `%${uploadTabSource}%` } }
       ];
     } else {
-      where.source = {
-        [Op.like]: 'google_sheets:%',
-        [Op.ne]: uploadTabSource
-      };
+      // Fix: Use Op.and to properly combine two conditions on the same field
+      // (SQLite/Sequelize ignores Op.ne when combined with Op.like on same object)
+      where[Op.and] = [
+        { source: { [Op.like]: 'google_sheets:%' } },
+        { source: { [Op.ne]: uploadTabSource } }
+      ];
     }
   }
 
@@ -452,10 +454,10 @@ router.get('/filter-options', async (req, res) => {
         where.source = { [Op.like]: `%${req.query.sheet}%` };
       }
     } else {
-      where.source = {
-        [Op.like]: 'google_sheets:%',
-        [Op.ne]: 'google_sheets:upload data'
-      };
+      where[Op.and] = [
+        { source: { [Op.like]: 'google_sheets:%' } },
+        { source: { [Op.ne]: 'google_sheets:upload data' } }
+      ];
     }
 
     const [groups, vehicles, decisions, locations, categories, engineers] = await Promise.all([
@@ -629,7 +631,26 @@ router.post('/', async (req, res) => {
 });
 
 // -------------------------------------------------------
+// POST /api/reports/create-sheet — Create a new Google Sheet tab
+// -------------------------------------------------------
+router.post('/create-sheet', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Sheet name is required' });
+    }
+    const result = await createSheetTab(name.trim());
+    res.json({ success: true, sheetId: result.sheetId, title: result.title });
+  } catch (err) {
+    console.error('Create sheet error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create sheet tab' });
+  }
+});
+
+// -------------------------------------------------------
 // POST /api/reports/upload — Bulk upload via Excel/CSV file
+// targetSheet param: if provided, use that sheet name as the source for each Excel tab
+// Each Excel tab maps to a corresponding Google Sheet tab by name
 // -------------------------------------------------------
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
@@ -648,6 +669,9 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       }
     });
 
+    // targetSheet: if provided by the frontend, each Excel tab maps to the corresponding Google Sheet tab by name
+    const targetSheetMap = req.body.targetSheetMap ? JSON.parse(req.body.targetSheetMap) : {};
+
     let added = 0, skipped = 0, errors = [];
     const uploadedRecords = [];
 
@@ -656,12 +680,19 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
       if (rows.length < 2) continue; // Skip empty sheets
 
+      // Determine the source: match Excel tab name to Google Sheet tab by name
+      // If a mapping is provided, use it; otherwise fall back to upload:<sheetName>
+      const mappedSheetName = targetSheetMap[sheetName] || null;
+      const sourceLabel = mappedSheetName
+        ? `google_sheets:${mappedSheetName}`
+        : `upload:${sheetName}`;
+
       const headers = rows[0];
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.length === 0 || !row.some(cell => String(cell || '').trim() !== '')) continue;
 
-        const record = mapRowToRecord(row, headers, i, `upload:${sheetName}`);
+        const record = mapRowToRecord(row, headers, i, sourceLabel);
 
         try {
           const existing = await TestReport.findOne({ where: { report_number: record.report_number } });
@@ -672,10 +703,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
               sourcesSet.add(record.source);
               newSource = Array.from(sourcesSet).join(',');
             }
-            await existing.update({
-              ...record,
-              source: newSource
-            });
+            await existing.update({ ...record, source: newSource });
           } else {
             await TestReport.create(record);
           }
@@ -974,18 +1002,26 @@ router.post('/upload-url', async (req, res) => {
 
     let added = 0, skipped = 0, errors = [];
     const uploadedRecords = [];
+    // targetSheetMap: maps Excel sheet tab names to Google Sheet tab names
+    const targetSheetMap = req.body.targetSheetMap || {};
 
     for (const sheetName of workbook.SheetNames) {
       const worksheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
       if (rows.length < 2) continue; // Skip empty sheets
 
+      // Determine source: match Excel tab to Google Sheet tab by name, fallback to url_import:
+      const mappedSheetName = targetSheetMap[sheetName] || null;
+      const sourceLabel = mappedSheetName
+        ? `google_sheets:${mappedSheetName}`
+        : `url_import:${sheetName}`;
+
       const headers = rows[0];
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (!row || row.length === 0 || !row.some(cell => String(cell || '').trim() !== '')) continue;
 
-        const record = mapRowToRecord(row, headers, i, `url_import:${sheetName}`);
+        const record = mapRowToRecord(row, headers, i, sourceLabel);
 
         try {
           const existing = await TestReport.findOne({ where: { report_number: record.report_number } });
@@ -996,10 +1032,7 @@ router.post('/upload-url', async (req, res) => {
               sourcesSet.add(record.source);
               newSource = Array.from(sourcesSet).join(',');
             }
-            await existing.update({
-              ...record,
-              source: newSource
-            });
+            await existing.update({ ...record, source: newSource });
           } else {
             await TestReport.create(record);
           }
@@ -1011,6 +1044,7 @@ router.post('/upload-url', async (req, res) => {
         }
       }
     }
+
 
     if (uploadedRecords.length > 0) {
       writeMultipleToGoogleSheet(uploadedRecords).catch(sheetsErr => {
